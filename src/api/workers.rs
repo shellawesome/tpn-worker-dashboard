@@ -130,6 +130,82 @@ pub async fn poll_worker_now(
     }
 }
 
+/// POST /api/workers/:id/ports — Update port config on a single worker, then restart.
+#[derive(Deserialize)]
+pub struct PortsUpdateRequest {
+    pub server_public_port: Option<u16>,
+    pub socks5_port: Option<u16>,
+    pub http_proxy_port: Option<u16>,
+    pub wireguard_server_port: Option<u16>,
+}
+
+pub async fn update_worker_ports(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<PortsUpdateRequest>,
+) -> Result<Json<Value>, AppError> {
+    let worker = db_workers::get_worker(&state.db, &id).await?;
+    let worker = worker.ok_or_else(|| AppError::NotFound(format!("Worker {} not found", id)))?;
+
+    let base_url = worker["url"].as_str().unwrap_or("").trim_end_matches('/');
+    let api_key = worker["api_key"].as_str().unwrap_or("");
+
+    // Build config payload (only non-None fields)
+    let mut payload = serde_json::Map::new();
+    if let Some(v) = body.server_public_port {
+        payload.insert("server_public_port".into(), json!(v));
+    }
+    if let Some(v) = body.socks5_port {
+        payload.insert("socks5_port".into(), json!(v));
+    }
+    if let Some(v) = body.http_proxy_port {
+        payload.insert("http_proxy_port".into(), json!(v));
+    }
+    if let Some(v) = body.wireguard_server_port {
+        payload.insert("wireguard_server_port".into(), json!(v));
+    }
+    if payload.is_empty() {
+        return Err(AppError::BadRequest("At least one port field is required".into()));
+    }
+
+    // Authenticate if needed
+    let token = crate::api::batch::login_for_token(&state.http_client, base_url, api_key).await
+        .map_err(|e| AppError::Internal(e))?;
+
+    // POST config update
+    let config_url = format!("{}/api/config/update", base_url);
+    let mut req = state.http_client.post(&config_url)
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&Value::Object(payload));
+    if let Some(ref t) = token {
+        req = req.header("Authorization", format!("Bearer {}", t));
+    }
+    let resp = req.send().await.map_err(|e| AppError::Internal(format!("Config update failed: {}", e)))?;
+    let config_result: Value = resp.json().await.map_err(|e| AppError::Internal(e.to_string()))?;
+
+    if config_result["success"].as_bool() != Some(true) {
+        return Ok(Json(config_result));
+    }
+
+    // Auto-restart
+    let restart_url = format!("{}/api/restart", base_url);
+    let mut req = state.http_client.post(&restart_url)
+        .timeout(std::time::Duration::from_secs(10));
+    if let Some(ref t) = token {
+        req = req.header("Authorization", format!("Bearer {}", t));
+    }
+    let restart_msg = match req.send().await {
+        Ok(_) => "restarting",
+        Err(_) => "restart failed",
+    };
+
+    let msg = config_result["message"].as_str().unwrap_or("OK");
+    Ok(Json(json!({
+        "success": true,
+        "message": format!("{}, {}", msg, restart_msg)
+    })))
+}
+
 /// GET /api/workers/:id/logs?lines=100 — Proxy worker logs.
 #[derive(Deserialize)]
 pub struct LogsQuery {

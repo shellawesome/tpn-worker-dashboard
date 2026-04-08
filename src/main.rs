@@ -153,6 +153,10 @@ async fn main() {
             "/api/workers/{id}/logs",
             get(api::workers::worker_logs),
         )
+        .route(
+            "/api/workers/{id}/ports",
+            post(api::workers::update_worker_ports),
+        )
         .route("/api/batch/version", post(api::batch::batch_check_version))
         .route("/api/batch/upgrade", post(api::batch::batch_upgrade))
         .route("/api/batch/config", post(api::batch::batch_config))

@@ -39,6 +39,15 @@ pub struct BatchAuthRequest {
 
 // ── Auth helper ──
 
+/// Public alias for use in other modules.
+pub async fn login_for_token(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+) -> Result<Option<String>, String> {
+    get_auth_token(client, base_url, api_key).await
+}
+
 /// Login to a worker and get JWT token. Returns None if no password needed.
 async fn get_auth_token(
     client: &reqwest::Client,

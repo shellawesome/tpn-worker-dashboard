@@ -265,6 +265,34 @@ td.err { color:var(--red); }
   <!-- Current snapshot cards -->
   <div class="grid" id="detailCards"></div>
 
+  <!-- Port Configuration -->
+  <div class="table-wrap" id="portConfigWrap" style="display:none">
+    <div class="log-header">
+      <h3>Port Configuration</h3>
+      <div class="log-controls">
+        <button class="btn btn-sm btn-primary" onclick="savePortConfig()">Save &amp; Restart</button>
+      </div>
+    </div>
+    <div style="padding:0 16px 16px; display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px;">
+      <div class="form-group">
+        <label>Server Public Port</label>
+        <input type="number" id="portPublic" placeholder="3000" min="1" max="65535">
+      </div>
+      <div class="form-group">
+        <label>SOCKS5 Port</label>
+        <input type="number" id="portSocks5" placeholder="1080" min="1" max="65535">
+      </div>
+      <div class="form-group">
+        <label>HTTP Proxy Port</label>
+        <input type="number" id="portHttp" placeholder="3128" min="1" max="65535">
+      </div>
+      <div class="form-group">
+        <label>WireGuard Port</label>
+        <input type="number" id="portWg" placeholder="51820" min="1" max="65535">
+      </div>
+    </div>
+  </div>
+
   <!-- Registration history from worker -->
   <div class="table-wrap" id="regHistoryWrap" style="display:none">
     <h3>Registration History (from Worker)</h3>
@@ -538,9 +566,11 @@ function loadDetail(id) {
       if (data) {
         renderDetailCards(data);
         renderRegHistory(data.registration_history || []);
+        renderPortConfig(data);
       } else {
         document.getElementById('detailCards').innerHTML = '<div class="empty">No data available</div>';
         document.getElementById('regHistoryWrap').style.display = 'none';
+        document.getElementById('portConfigWrap').style.display = 'none';
       }
 
       // Poll history table
@@ -632,6 +662,47 @@ function renderPollHistory(items) {
     html += '<td>' + truncate(esc(r.error_message || ''), 50) + '</td></tr>';
   });
   document.getElementById('pollHistoryBody').innerHTML = html;
+}
+
+// ===== Port Config =====
+function renderPortConfig(d) {
+  document.getElementById('portConfigWrap').style.display = 'block';
+  document.getElementById('portPublic').value = d.network && d.network.public_port ? d.network.public_port : '';
+  document.getElementById('portSocks5').value = d.proxy && d.proxy.socks5_port ? d.proxy.socks5_port : '';
+  document.getElementById('portHttp').value = d.proxy && d.proxy.http_proxy_port ? d.proxy.http_proxy_port : '';
+  document.getElementById('portWg').value = d.wireguard && d.wireguard.listen_port ? d.wireguard.listen_port : '';
+}
+
+function savePortConfig() {
+  if (!currentWorkerId) return;
+  var body = {};
+  var v;
+  v = parseInt(document.getElementById('portPublic').value);
+  if (v > 0) body.server_public_port = v;
+  v = parseInt(document.getElementById('portSocks5').value);
+  if (v > 0) body.socks5_port = v;
+  v = parseInt(document.getElementById('portHttp').value);
+  if (v > 0) body.http_proxy_port = v;
+  v = parseInt(document.getElementById('portWg').value);
+  if (v > 0) body.wireguard_server_port = v;
+
+  if (Object.keys(body).length === 0) { alert('No port values to save'); return; }
+  if (!confirm('Save ports and restart worker?')) return;
+
+  fetch('/api/workers/' + currentWorkerId + '/ports', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.success) {
+        alert(d.message || 'Saved');
+      } else {
+        alert('Error: ' + (d.message || d.error || 'Failed'));
+      }
+    })
+    .catch(function(e) { alert('Error: ' + e.message); });
 }
 
 // ===== Logs =====
