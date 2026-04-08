@@ -236,6 +236,9 @@ td.err { color:var(--red); }
     <button class="btn btn-sm btn-primary" onclick="batchUpgrade()">Batch Upgrade</button>
     <button class="btn btn-sm" onclick="openBatchConfigModal()">Batch Config</button>
     <button class="btn btn-sm" onclick="openBatchPasswordModal()">Batch Password</button>
+    <button class="btn btn-sm" onclick="batchRestart()">Restart</button>
+    <button class="btn btn-sm" onclick="batchStop()">Stop</button>
+    <button class="btn btn-sm" onclick="batchStart()">Start</button>
   </div>
 
   <div class="grid" id="workerGrid">
@@ -766,6 +769,26 @@ function batchUpgrade() {
   if (ids.length === 0) return;
   if (!confirm('Upgrade ' + ids.length + ' worker(s)? They will restart after upgrading.')) return;
   executeBatch('Batch Upgrade', '/api/batch/upgrade', { worker_ids: ids });
+}
+
+function batchRestart() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  if (!confirm('Restart ' + ids.length + ' worker(s)?')) return;
+  executeBatch('Batch Restart', '/api/batch/restart', { worker_ids: ids });
+}
+
+function batchStop() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  if (!confirm('Stop ' + ids.length + ' worker(s)?')) return;
+  executeBatch('Batch Stop', '/api/batch/stop', { worker_ids: ids });
+}
+
+function batchStart() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  executeBatch('Batch Start', '/api/batch/start', { worker_ids: ids });
 }
 
 function openBatchConfigModal() {

@@ -293,6 +293,72 @@ pub async fn batch_config(
             match authed_post(&client, &api_url, &token, Some(payload), Duration::from_secs(10)).await {
                 Ok(data) => {
                     let msg = data["message"].as_str().unwrap_or("OK").to_string();
+                    // Auto-restart so config changes take effect
+                    let restart_url = format!("{}/api/restart", url);
+                    let restart_msg = match authed_post(&client, &restart_url, &token, None, Duration::from_secs(10)).await {
+                        Ok(_) => ", restarting",
+                        Err(_) => ", restart failed",
+                    };
+                    json!({ "worker_id": id, "worker_name": name, "success": true, "message": format!("{}{}", msg, restart_msg) })
+                }
+                Err(e) => {
+                    json!({ "worker_id": id, "worker_name": name, "success": false, "message": e })
+                }
+            }
+        }));
+    }
+
+    let mut results = Vec::new();
+    for h in handles {
+        if let Ok(r) = h.await {
+            results.push(r);
+        }
+    }
+
+    Ok(Json(json!({ "results": results })))
+}
+
+// ── Process control batch handlers ──
+
+/// Generic batch process control (restart/stop/start).
+async fn batch_process_control(
+    state: &AppState,
+    worker_ids: &[String],
+    action: &str,
+    timeout_secs: u64,
+) -> Result<Json<Value>, AppError> {
+    let workers = db_workers::get_workers_by_ids(&state.db, worker_ids).await?;
+    if workers.is_empty() {
+        return Err(AppError::BadRequest("No valid workers found".into()));
+    }
+
+    let sem = Arc::new(Semaphore::new(20));
+    let client = state.http_client.clone();
+    let action = action.to_string();
+    let mut handles = Vec::new();
+
+    for w in &workers {
+        let sem = sem.clone();
+        let client = client.clone();
+        let action = action.clone();
+        let id = w["id"].as_str().unwrap_or("").to_string();
+        let name = w["name"].as_str().unwrap_or("").to_string();
+        let url = w["url"].as_str().unwrap_or("").trim_end_matches('/').to_string();
+        let api_key = w["api_key"].as_str().unwrap_or("").to_string();
+
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await;
+            let token = match get_auth_token(&client, &url, &api_key).await {
+                Ok(t) => t,
+                Err(e) => {
+                    return json!({ "worker_id": id, "worker_name": name, "success": false, "message": e });
+                }
+            };
+
+            let api_url = format!("{}/api/{}", url, action);
+            match authed_post(&client, &api_url, &token, None, Duration::from_secs(timeout_secs)).await {
+                Ok(data) => {
+                    let msg = data["message"].as_str().unwrap_or("OK").to_string();
                     json!({ "worker_id": id, "worker_name": name, "success": true, "message": msg })
                 }
                 Err(e) => {
@@ -310,6 +376,30 @@ pub async fn batch_config(
     }
 
     Ok(Json(json!({ "results": results })))
+}
+
+/// POST /api/batch/restart — Restart multiple workers.
+pub async fn batch_restart(
+    State(state): State<AppState>,
+    Json(body): Json<BatchRequest>,
+) -> Result<Json<Value>, AppError> {
+    batch_process_control(&state, &body.worker_ids, "restart", 10).await
+}
+
+/// POST /api/batch/stop — Stop multiple workers.
+pub async fn batch_stop(
+    State(state): State<AppState>,
+    Json(body): Json<BatchRequest>,
+) -> Result<Json<Value>, AppError> {
+    batch_process_control(&state, &body.worker_ids, "stop", 10).await
+}
+
+/// POST /api/batch/start — Start multiple workers.
+pub async fn batch_start(
+    State(state): State<AppState>,
+    Json(body): Json<BatchRequest>,
+) -> Result<Json<Value>, AppError> {
+    batch_process_control(&state, &body.worker_ids, "start", 10).await
 }
 
 /// POST /api/batch/password — Set password on multiple workers.
@@ -357,7 +447,13 @@ pub async fn batch_set_password(
                     // Update api_key in dashboard DB so future auth uses new password
                     let _ = db_workers::update_worker(&db, &id, None, None, None, Some(&password), None).await;
                     let msg = data["message"].as_str().unwrap_or("OK").to_string();
-                    json!({ "worker_id": id, "worker_name": name, "success": true, "message": msg })
+                    // Auto-restart so password change takes effect
+                    let restart_url = format!("{}/api/restart", url);
+                    let restart_msg = match authed_post(&client, &restart_url, &token, None, Duration::from_secs(10)).await {
+                        Ok(_) => ", restarting",
+                        Err(_) => ", restart failed",
+                    };
+                    json!({ "worker_id": id, "worker_name": name, "success": true, "message": format!("{}{}", msg, restart_msg) })
                 }
                 Err(e) => {
                     json!({ "worker_id": id, "worker_name": name, "success": false, "message": e })
