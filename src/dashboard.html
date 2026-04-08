@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TPN Worker Dashboard</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --card: #1a1d27;
+  --border: #2a2d3a;
+  --text: #e4e6eb;
+  --muted: #8b8d97;
+  --accent: #4f8ff7;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #eab308;
+  --hover: #242736;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+  background: var(--bg); color: var(--text);
+  padding: 20px; min-height: 100vh;
+}
+
+/* Header */
+.header {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:24px; padding-bottom:16px; border-bottom:1px solid var(--border);
+}
+.header h1 { font-size:1.4rem; font-weight:600; }
+.header-right { display:flex; align-items:center; gap:16px; }
+.summary { font-size:0.85rem; color:var(--muted); }
+.summary .online { color:var(--green); font-weight:600; }
+.summary .offline { color:var(--red); font-weight:600; }
+.btn {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:8px 16px; border-radius:6px; border:1px solid var(--border);
+  background:var(--card); color:var(--text); cursor:pointer;
+  font-size:0.85rem; transition:background 0.15s;
+}
+.btn:hover { background:var(--hover); }
+.btn-primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.btn-primary:hover { opacity:0.9; }
+.btn-danger { border-color:var(--red); color:var(--red); }
+.btn-danger:hover { background:rgba(239,68,68,0.1); }
+.btn-sm { padding:4px 10px; font-size:0.8rem; }
+
+/* Grid */
+.grid {
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));
+  gap:16px; margin-bottom:24px;
+}
+.card {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:8px; padding:16px; cursor:pointer;
+  transition:border-color 0.15s;
+}
+.card:hover { border-color:var(--accent); }
+.card-header {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:12px;
+}
+.card-header .name { font-size:1rem; font-weight:600; }
+.dot {
+  width:10px; height:10px; border-radius:50%; display:inline-block;
+  margin-right:8px; vertical-align:middle;
+}
+.dot-green { background:var(--green); }
+.dot-red { background:var(--red); }
+.dot-gray { background:var(--muted); }
+.card .row {
+  display:flex; justify-content:space-between; padding:3px 0; font-size:0.85rem;
+}
+.card .row .label { color:var(--muted); }
+.card .row .value { font-weight:500; }
+.card .row .value.ok { color:var(--green); }
+.card .row .value.err { color:var(--red); }
+.card .row .value a { color:var(--accent); text-decoration:none; }
+.progress-bar {
+  background:var(--border); border-radius:3px; height:6px; margin-top:2px;
+}
+.progress-fill {
+  height:100%; border-radius:3px; background:var(--accent);
+  transition:width 0.3s;
+}
+.card-actions {
+  display:flex; gap:8px; margin-top:12px; padding-top:8px;
+  border-top:1px solid var(--border);
+}
+
+/* Modal */
+.modal-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.6);
+  display:none; align-items:center; justify-content:center; z-index:100;
+}
+.modal-overlay.active { display:flex; }
+.modal {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:10px; padding:24px; width:90%; max-width:480px;
+}
+.modal h2 { margin-bottom:16px; font-size:1.1rem; }
+.form-group { margin-bottom:14px; }
+.form-group label { display:block; font-size:0.8rem; color:var(--muted); margin-bottom:4px; }
+.form-group input, .form-group textarea {
+  width:100%; padding:8px 12px; border-radius:6px;
+  border:1px solid var(--border); background:var(--bg);
+  color:var(--text); font-size:0.9rem; font-family:inherit;
+}
+.form-group textarea { min-height:60px; resize:vertical; }
+.modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
+
+/* Detail View */
+.detail-view { display:none; }
+.detail-view.active { display:block; }
+.overview-view { display:block; }
+.overview-view.hidden { display:none; }
+.back-btn {
+  display:inline-flex; align-items:center; gap:4px;
+  color:var(--accent); cursor:pointer; font-size:0.9rem;
+  margin-bottom:16px; border:none; background:none;
+}
+.back-btn:hover { text-decoration:underline; }
+.detail-header {
+  display:flex; align-items:center; gap:12px; margin-bottom:20px;
+}
+.detail-header h2 { font-size:1.2rem; }
+
+/* Status dots row */
+.status-dots { display:flex; gap:2px; flex-wrap:wrap; margin:12px 0; }
+.status-dot {
+  width:8px; height:8px; border-radius:2px;
+}
+.status-dot.ok { background:var(--green); }
+.status-dot.fail { background:var(--red); }
+
+/* Table */
+.table-wrap {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:8px; overflow-x:auto; margin-top:16px;
+}
+.table-wrap h3 {
+  font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;
+  color:var(--muted); padding:16px 16px 12px;
+}
+table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+th {
+  text-align:left; padding:8px 12px; color:var(--muted);
+  font-weight:500; border-bottom:1px solid var(--border); white-space:nowrap;
+}
+td { padding:8px 12px; border-bottom:1px solid var(--border); white-space:nowrap; }
+tr:last-child td { border-bottom:none; }
+td.ok { color:var(--green); }
+td.err { color:var(--red); }
+.empty { padding:24px; text-align:center; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ===== Overview View ===== -->
+<div id="overviewView" class="overview-view">
+  <div class="header">
+    <h1>TPN Worker Dashboard</h1>
+    <div class="header-right">
+      <span class="summary" id="summary">loading...</span>
+      <button class="btn btn-primary" onclick="openAddModal()">+ Add Worker</button>
+    </div>
+  </div>
+  <div class="grid" id="workerGrid">
+    <div class="empty">loading...</div>
+  </div>
+</div>
+
+<!-- ===== Detail View ===== -->
+<div id="detailView" class="detail-view">
+  <button class="back-btn" onclick="showOverview()">&larr; Back</button>
+  <div class="detail-header">
+    <span class="dot" id="detailDot"></span>
+    <h2 id="detailName">-</h2>
+    <span style="color:var(--muted);font-size:0.85rem" id="detailUrl">-</span>
+  </div>
+
+  <!-- Status dots -->
+  <div>
+    <span style="font-size:0.8rem;color:var(--muted)">Last 50 polls:</span>
+    <div class="status-dots" id="statusDots"></div>
+  </div>
+
+  <!-- Current snapshot cards -->
+  <div class="grid" id="detailCards"></div>
+
+  <!-- Registration history from worker -->
+  <div class="table-wrap" id="regHistoryWrap" style="display:none">
+    <h3>Registration History (from Worker)</h3>
+    <table>
+      <thead><tr><th>Time</th><th>Status</th><th>HTTP</th><th>Error</th></tr></thead>
+      <tbody id="regHistoryBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Poll history from dashboard -->
+  <div class="table-wrap">
+    <h3>Poll History (from Dashboard)</h3>
+    <table>
+      <thead><tr><th>Time</th><th>Status</th><th>Latency</th><th>Version</th><th>WG Peers</th><th>Error</th></tr></thead>
+      <tbody id="pollHistoryBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== Add/Edit Modal ===== -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2 id="modalTitle">Add Worker</h2>
+    <input type="hidden" id="editId">
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="fName" placeholder="e.g. Worker-US-1">
+    </div>
+    <div class="form-group">
+      <label>URL</label>
+      <input type="text" id="fUrl" placeholder="http://10.0.0.5:3000">
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="fNotes" placeholder="optional notes"></textarea>
+    </div>
+    <div class="form-group">
+      <label>API Key (optional)</label>
+      <input type="password" id="fApiKey" placeholder="ADMIN_API_KEY">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveWorker()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var workers = [];
+var currentWorkerId = null;
+
+function fmtUptime(s) {
+  if (!s) return '-';
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s/60) + 'm';
+  var h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+  if (s < 86400) return h + 'h ' + m + 'm';
+  var d = Math.floor(s/86400); h = Math.floor((s%86400)/3600);
+  return d + 'd ' + h + 'h';
+}
+
+function fmtTime(t) {
+  if (!t || t === '-') return '-';
+  try { return new Date(t).toLocaleString('zh-CN', {hour12:false}); } catch(e) { return t; }
+}
+
+function truncate(s, n) { return (!s) ? '-' : s.length > n ? s.substring(0,n)+'...' : s; }
+
+// ===== Overview =====
+function renderOverview() {
+  var onCount = 0, offCount = 0;
+  workers.forEach(function(w) {
+    if (w.latest && w.latest.online) onCount++; else offCount++;
+  });
+  document.getElementById('summary').innerHTML =
+    '<span class="online">' + onCount + ' online</span> / <span class="offline">' + offCount + ' offline</span> &mdash; ' + workers.length + ' total';
+
+  var grid = document.getElementById('workerGrid');
+  if (workers.length === 0) {
+    grid.innerHTML = '<div class="empty">No workers yet. Click "Add Worker" to get started.</div>';
+    return;
+  }
+
+  var html = '';
+  workers.forEach(function(w) {
+    var L = w.latest;
+    var online = L && L.online;
+    var dotClass = !L ? 'dot-gray' : (online ? 'dot-green' : 'dot-red');
+    var statusText = !L ? 'never polled' : (online ? 'online' : 'offline');
+
+    html += '<div class="card" onclick="showDetail(\'' + w.id + '\')">';
+    html += '<div class="card-header"><span class="name"><span class="dot ' + dotClass + '"></span>' + esc(w.name) + '</span>';
+    html += '<span style="font-size:0.75rem;color:var(--muted)">' + statusText + '</span></div>';
+    html += '<div class="row"><span class="label">URL</span><span class="value"><a href="' + esc(w.url) + '/dashboard" target="_blank" onclick="event.stopPropagation()">' + esc(w.url) + '</a></span></div>';
+
+    if (L && online) {
+      html += '<div class="row"><span class="label">version</span><span class="value">' + esc(L.version) + '</span></div>';
+      html += '<div class="row"><span class="label">uptime</span><span class="value">' + fmtUptime(L.uptime_seconds) + '</span></div>';
+      html += '<div class="row"><span class="label">registration</span><span class="value ' + (L.registration_success ? 'ok' : 'err') + '">' + (L.registration_success ? 'registered' : 'not registered') + '</span></div>';
+      var wgPct = L.wg_max_peers > 0 ? Math.round(L.wg_active_peers / L.wg_max_peers * 100) : 0;
+      html += '<div class="row"><span class="label">WG peers</span><span class="value">' + L.wg_active_peers + ' / ' + L.wg_max_peers + '</span></div>';
+      html += '<div class="progress-bar"><div class="progress-fill" style="width:' + wgPct + '%"></div></div>';
+      html += '<div class="row"><span class="label">proxy available</span><span class="value">' + L.proxy_available + ' / ' + L.proxy_total + '</span></div>';
+    }
+
+    if (L) {
+      html += '<div class="row"><span class="label">polled</span><span class="value">' + fmtTime(L.polled_at) + '</span></div>';
+      html += '<div class="row"><span class="label">latency</span><span class="value">' + L.poll_latency_ms + 'ms</span></div>';
+      if (!online && L.error_message) {
+        html += '<div class="row"><span class="label">error</span><span class="value err">' + truncate(esc(L.error_message), 50) + '</span></div>';
+      }
+    }
+
+    html += '<div class="card-actions">';
+    html += '<button class="btn btn-sm" onclick="event.stopPropagation();openEditModal(\'' + w.id + '\')">Edit</button>';
+    html += '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteWorker(\'' + w.id + '\',\'' + esc(w.name) + '\')">Delete</button>';
+    html += '</div></div>';
+  });
+  grid.innerHTML = html;
+}
+
+function refreshOverview() {
+  fetch('/api/workers')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { workers = d; renderOverview(); })
+    .catch(function(e) { console.error('fetch error', e); });
+}
+
+// ===== Detail View =====
+function showDetail(id) {
+  currentWorkerId = id;
+  document.getElementById('overviewView').classList.add('hidden');
+  document.getElementById('detailView').classList.add('active');
+  loadDetail(id);
+}
+
+function showOverview() {
+  currentWorkerId = null;
+  document.getElementById('detailView').classList.remove('active');
+  document.getElementById('overviewView').classList.remove('hidden');
+  refreshOverview();
+}
+
+function loadDetail(id) {
+  // Load latest snapshot via history (limit=1 for current, limit=50 for dots)
+  fetch('/api/workers/' + id + '/history?limit=50')
+    .then(function(r) { return r.json(); })
+    .then(function(history) {
+      var w = workers.find(function(w) { return w.id === id; });
+      if (!w) return;
+
+      var dotClass = 'dot-gray';
+      if (history.length > 0 && history[0].online) dotClass = 'dot-green';
+      else if (history.length > 0) dotClass = 'dot-red';
+
+      document.getElementById('detailDot').className = 'dot ' + dotClass;
+      document.getElementById('detailName').textContent = w.name;
+      document.getElementById('detailUrl').textContent = w.url;
+
+      // Status dots (newest first, but display oldest first)
+      var dots = '';
+      for (var i = history.length - 1; i >= 0; i--) {
+        dots += '<div class="status-dot ' + (history[i].online ? 'ok' : 'fail') + '" title="' + fmtTime(history[i].polled_at) + '"></div>';
+      }
+      document.getElementById('statusDots').innerHTML = dots;
+
+      // Current data cards
+      var latest = history.length > 0 ? history[0] : null;
+      var data = null;
+      if (latest && latest.data) {
+        try { data = JSON.parse(latest.data); } catch(e) {}
+      }
+
+      if (data) {
+        renderDetailCards(data);
+        renderRegHistory(data.registration_history || []);
+      } else {
+        document.getElementById('detailCards').innerHTML = '<div class="empty">No data available</div>';
+        document.getElementById('regHistoryWrap').style.display = 'none';
+      }
+
+      // Poll history table
+      renderPollHistory(history);
+    });
+}
+
+function renderDetailCards(d) {
+  var html = '';
+  // Worker
+  html += card('Worker', [
+    ['version', d.worker.version], ['mode', d.worker.mode],
+    ['uptime', fmtUptime(d.worker.uptime_seconds)],
+    ['start time', fmtTime(d.worker.start_time)],
+    ['git', d.worker.git_branch + ' @ ' + (d.worker.git_hash||'').substring(0,7)],
+  ]);
+  // Mining Pool
+  var mp = d.mining_pool;
+  html += card('Mining Pool', [
+    ['URL', mp.url ? '<a href="'+esc(mp.url)+'" target="_blank">'+esc(mp.url)+'</a>' : '-', true],
+    ['name', mp.name], ['registration', mp.last_registration_success ? '<span class="ok">registered</span>' : '<span class="err">not registered</span>', true],
+    ['last register', fmtTime(mp.last_registration_time)],
+  ]);
+  // WireGuard
+  var wg = d.wireguard;
+  html += card('WireGuard', [
+    ['status', wg.enabled ? '<span class="ok">running</span>' : '<span class="err">disabled</span>', true],
+    ['interface', wg.interface], ['active peers', wg.active_peers + ' / ' + wg.max_peers],
+    ['active leases', wg.active_leases], ['listen port', wg.listen_port],
+    ['subnet', wg.subnet], ['server pubkey', truncate(wg.server_public_key, 20)],
+  ]);
+  // Proxy
+  var px = d.proxy;
+  html += card('Proxy', [
+    ['SOCKS5 port', px.socks5_port], ['HTTP port', px.http_proxy_port],
+    ['credentials', px.active_credentials + ' / ' + px.credential_count],
+    ['available', px.available_non_priority], ['priority slots', px.priority_slots],
+  ]);
+  // Network
+  var net = d.network;
+  html += card('Network', [
+    ['host', net.public_host], ['port', net.public_port],
+    ['protocol', net.protocol],
+    ['base URL', net.base_url ? '<a href="'+esc(net.base_url)+'" target="_blank">'+esc(net.base_url)+'</a>' : '-', true],
+  ]);
+  // Payment
+  html += card('Payment', [
+    ['EVM', d.payment.evm_address || 'not set'],
+    ['Bittensor', d.payment.bittensor_address || 'not set'],
+  ]);
+  document.getElementById('detailCards').innerHTML = html;
+}
+
+function card(title, rows) {
+  var h = '<div class="card" style="cursor:default"><h2 style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin-bottom:12px">' + title + '</h2>';
+  rows.forEach(function(r) {
+    var isHtml = r[2];
+    h += '<div class="row"><span class="label">' + r[0] + '</span><span class="value">' + (isHtml ? r[1] : esc(String(r[1] == null ? '-' : r[1]))) + '</span></div>';
+  });
+  return h + '</div>';
+}
+
+function renderRegHistory(items) {
+  var wrap = document.getElementById('regHistoryWrap');
+  if (!items || items.length === 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  var html = '';
+  items.forEach(function(r) {
+    html += '<tr><td>' + fmtTime(r.created_at) + '</td>';
+    html += '<td class="' + (r.success ? 'ok' : 'err') + '">' + (r.success ? 'OK' : 'FAIL') + '</td>';
+    html += '<td>' + (r.status_code||'-') + '</td>';
+    html += '<td>' + truncate(esc(r.error_message || ''), 50) + '</td></tr>';
+  });
+  document.getElementById('regHistoryBody').innerHTML = html;
+}
+
+function renderPollHistory(items) {
+  if (!items || items.length === 0) {
+    document.getElementById('pollHistoryBody').innerHTML = '<tr><td colspan="6" class="empty">No poll history</td></tr>';
+    return;
+  }
+  var html = '';
+  items.forEach(function(r) {
+    html += '<tr><td>' + fmtTime(r.polled_at) + '</td>';
+    html += '<td class="' + (r.online ? 'ok' : 'err') + '">' + (r.online ? 'OK' : 'FAIL') + '</td>';
+    html += '<td>' + r.poll_latency_ms + 'ms</td>';
+    html += '<td>' + esc(r.version || '-') + '</td>';
+    html += '<td>' + (r.online ? r.wg_active_peers + '/' + r.wg_max_peers : '-') + '</td>';
+    html += '<td>' + truncate(esc(r.error_message || ''), 50) + '</td></tr>';
+  });
+  document.getElementById('pollHistoryBody').innerHTML = html;
+}
+
+// ===== Modal =====
+function openAddModal() {
+  document.getElementById('modalTitle').textContent = 'Add Worker';
+  document.getElementById('editId').value = '';
+  document.getElementById('fName').value = '';
+  document.getElementById('fUrl').value = '';
+  document.getElementById('fNotes').value = '';
+  document.getElementById('fApiKey').value = '';
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function openEditModal(id) {
+  var w = workers.find(function(w) { return w.id === id; });
+  if (!w) return;
+  document.getElementById('modalTitle').textContent = 'Edit Worker';
+  document.getElementById('editId').value = id;
+  document.getElementById('fName').value = w.name;
+  document.getElementById('fUrl').value = w.url;
+  document.getElementById('fNotes').value = w.notes || '';
+  document.getElementById('fApiKey').value = '';
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('active');
+}
+
+function saveWorker() {
+  var id = document.getElementById('editId').value;
+  var body = {
+    name: document.getElementById('fName').value,
+    url: document.getElementById('fUrl').value,
+    notes: document.getElementById('fNotes').value,
+    api_key: document.getElementById('fApiKey').value,
+  };
+
+  var method = id ? 'PUT' : 'POST';
+  var url = id ? '/api/workers/' + id : '/api/workers';
+
+  fetch(url, {
+    method: method,
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  })
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || 'Failed'); });
+      return r.json();
+    })
+    .then(function() { closeModal(); refreshOverview(); })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+
+function deleteWorker(id, name) {
+  if (!confirm('Delete worker "' + name + '"? All history will be lost.')) return;
+  fetch('/api/workers/' + id, { method: 'DELETE' })
+    .then(function() { refreshOverview(); })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+
+function esc(s) {
+  if (!s) return '';
+  var d = document.createElement('div');
+  d.appendChild(document.createTextNode(s));
+  return d.innerHTML;
+}
+
+// ===== Init =====
+refreshOverview();
+setInterval(function() {
+  if (currentWorkerId) loadDetail(currentWorkerId);
+  else refreshOverview();
+}, 5000);
+
+// Handle ESC to close modal
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeModal();
+});
+// Close modal on overlay click
+document.getElementById('modalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+</body>
+</html>

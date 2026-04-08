@@ -1,0 +1,102 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.88.0
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Prepare release asset
+        run: |
+          mv target/release/tpn-worker-dashboard tpn-worker-dashboard-linux-ubuntu22-amd64
+          echo "RELEASE_ASSET=tpn-worker-dashboard-linux-ubuntu22-amd64" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpn-worker-dashboard-ubuntu22-amd64
+          path: ${{ env.RELEASE_ASSET }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          cp artifacts/tpn-worker-dashboard-ubuntu22-amd64/tpn-worker-dashboard-linux-ubuntu22-amd64 release-files/
+          ls -lh release-files/
+
+      - name: Get version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "Current version: v${VERSION}"
+
+      - name: Delete existing latest release and tag
+        run: |
+          gh release delete latest --yes || true
+          git push origin :refs/tags/latest || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Create latest tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f latest
+          git push -f origin latest
+
+      - name: Create or Update Latest Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest Build (${{ steps.version.outputs.version }})"
+          body: |
+            ## Latest Auto Build
+
+            **Version**: ${{ steps.version.outputs.version }}
+            **Commit**: ${{ github.sha }}
+            **Branch**: ${{ github.ref_name }}
+            **Build Time**: ${{ github.event.head_commit.timestamp }}
+
+            ### Changes
+
+            ${{ github.event.head_commit.message }}
+
+            ---
+
+            ### Quick Install
+
+            ```bash
+            wget https://github.com/${{ github.repository }}/releases/download/latest/tpn-worker-dashboard-linux-ubuntu22-amd64 -O tpn-worker-dashboard && chmod +x tpn-worker-dashboard
+            ```
+          files: release-files/*
+          prerelease: false
+          draft: false
