@@ -149,6 +149,14 @@ async fn main() {
             "/api/workers/{id}/poll",
             post(api::workers::poll_worker_now),
         )
+        .route(
+            "/api/workers/{id}/logs",
+            get(api::workers::worker_logs),
+        )
+        .route("/api/batch/version", post(api::batch::batch_check_version))
+        .route("/api/batch/upgrade", post(api::batch::batch_upgrade))
+        .route("/api/batch/config", post(api::batch::batch_config))
+        .route("/api/batch/password", post(api::batch::batch_set_password))
         .with_state(state);
 
     // 8. Spawn background poller

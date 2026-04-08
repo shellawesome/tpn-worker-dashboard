@@ -129,3 +129,55 @@ pub async fn poll_worker_now(
         }
     }
 }
+
+/// GET /api/workers/:id/logs?lines=100 — Proxy worker logs.
+#[derive(Deserialize)]
+pub struct LogsQuery {
+    #[serde(default = "default_log_lines")]
+    pub lines: u32,
+}
+fn default_log_lines() -> u32 { 100 }
+
+pub async fn worker_logs(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(q): Query<LogsQuery>,
+) -> Result<Json<Value>, AppError> {
+    let worker = db_workers::get_worker(&state.db, &id).await?;
+    let worker = worker.ok_or_else(|| AppError::NotFound(format!("Worker {} not found", id)))?;
+
+    let base_url = worker["url"].as_str().unwrap_or("").trim_end_matches('/');
+    if base_url.is_empty() {
+        return Err(AppError::BadRequest("Worker has no URL configured".into()));
+    }
+
+    let url = format!("{}/api/logs?lines={}", base_url, q.lines);
+
+    let resp = state.http_client.get(&url).send().await.map_err(|e| {
+        AppError::Internal(format!("Failed to connect to worker: {}", e))
+    })?;
+
+    let status = resp.status();
+    let body = resp.text().await.map_err(|e| {
+        AppError::Internal(format!("Failed to read worker response: {}", e))
+    })?;
+
+    if !status.is_success() {
+        return Ok(Json(json!({
+            "success": false,
+            "error": format!("Worker returned HTTP {}", status),
+            "lines": [],
+            "count": 0
+        })));
+    }
+
+    match serde_json::from_str::<Value>(&body) {
+        Ok(data) => Ok(Json(data)),
+        Err(_) => Ok(Json(json!({
+            "success": false,
+            "error": "Invalid JSON from worker",
+            "lines": [],
+            "count": 0
+        }))),
+    }
+}

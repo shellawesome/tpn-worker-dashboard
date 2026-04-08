@@ -90,6 +90,38 @@ body {
   border-top:1px solid var(--border);
 }
 
+/* Batch selection */
+.card { position:relative; }
+.card.selected { border-color:var(--accent); background:rgba(79,143,247,0.08); }
+.card .checkbox-wrap {
+  position:absolute; top:10px; right:10px; z-index:2;
+}
+.card .checkbox-wrap input[type="checkbox"] {
+  width:18px; height:18px; cursor:pointer; accent-color:var(--accent);
+}
+.batch-toolbar {
+  display:none; align-items:center; gap:10px;
+  padding:12px 16px; margin-bottom:16px;
+  background:var(--card); border:1px solid var(--accent); border-radius:8px;
+}
+.batch-toolbar.active { display:flex; flex-wrap:wrap; }
+.batch-toolbar .batch-info {
+  font-size:0.85rem; color:var(--muted); margin-right:auto;
+}
+.batch-toolbar .batch-info strong { color:var(--text); }
+.modal.modal-wide { max-width:680px; }
+.batch-results { max-height:400px; overflow-y:auto; }
+.batch-result-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:8px 0; border-bottom:1px solid var(--border); font-size:0.85rem; gap:12px;
+}
+.batch-result-row:last-child { border-bottom:none; }
+.batch-result-row .worker-name { font-weight:500; white-space:nowrap; }
+.batch-result-row .result-msg { text-align:right; word-break:break-word; }
+.batch-result-row .result-ok { color:var(--green); }
+.batch-result-row .result-err { color:var(--red); }
+.batch-progress { margin-bottom:12px; font-size:0.85rem; color:var(--muted); }
+
 /* Modal */
 .modal-overlay {
   position:fixed; inset:0; background:rgba(0,0,0,0.6);
@@ -154,6 +186,32 @@ tr:last-child td { border-bottom:none; }
 td.ok { color:var(--green); }
 td.err { color:var(--red); }
 .empty { padding:24px; text-align:center; color:var(--muted); }
+
+/* Log viewer */
+.log-section {
+  margin-top:16px; background:var(--card); border:1px solid var(--border); border-radius:8px;
+}
+.log-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px 16px 12px; gap:12px;
+}
+.log-header h3 {
+  font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;
+  color:var(--muted); margin:0;
+}
+.log-controls { display:flex; align-items:center; gap:8px; }
+.log-controls select {
+  padding:4px 8px; border-radius:4px; border:1px solid var(--border);
+  background:var(--bg); color:var(--text); font-size:0.8rem;
+}
+.log-viewer {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  background:#0a0e14; color:#b3b1ad; font-size:0.78rem; line-height:1.5;
+  padding:12px 16px; max-height:500px; overflow-y:auto;
+  white-space:pre-wrap; word-break:break-all;
+  border-top:1px solid var(--border); border-radius:0 0 8px 8px;
+}
+.log-viewer .log-empty { color:var(--muted); font-style:italic; }
 </style>
 </head>
 <body>
@@ -167,6 +225,19 @@ td.err { color:var(--red); }
       <button class="btn btn-primary" onclick="openAddModal()">+ Add Worker</button>
     </div>
   </div>
+
+  <!-- Batch Toolbar -->
+  <div class="batch-toolbar" id="batchToolbar">
+    <span class="batch-info"><strong id="batchCount">0</strong> workers selected</span>
+    <button class="btn btn-sm" onclick="selectAllWorkers()">Select All</button>
+    <button class="btn btn-sm" onclick="selectOnlineWorkers()">Select Online</button>
+    <button class="btn btn-sm" onclick="deselectAllWorkers()">Deselect All</button>
+    <button class="btn btn-sm" onclick="batchCheckVersion()">Check Version</button>
+    <button class="btn btn-sm btn-primary" onclick="batchUpgrade()">Batch Upgrade</button>
+    <button class="btn btn-sm" onclick="openBatchConfigModal()">Batch Config</button>
+    <button class="btn btn-sm" onclick="openBatchPasswordModal()">Batch Password</button>
+  </div>
+
   <div class="grid" id="workerGrid">
     <div class="empty">loading...</div>
   </div>
@@ -207,6 +278,24 @@ td.err { color:var(--red); }
       <tbody id="pollHistoryBody"></tbody>
     </table>
   </div>
+
+  <!-- Worker Logs -->
+  <div class="log-section" id="logSection">
+    <div class="log-header">
+      <h3>Worker Logs</h3>
+      <div class="log-controls">
+        <select id="logLines" onchange="loadLogs(currentWorkerId)">
+          <option value="50">50 lines</option>
+          <option value="100" selected>100 lines</option>
+          <option value="200">200 lines</option>
+          <option value="500">500 lines</option>
+          <option value="1000">1000 lines</option>
+        </select>
+        <button class="btn btn-sm" onclick="loadLogs(currentWorkerId)">Refresh</button>
+      </div>
+    </div>
+    <pre class="log-viewer" id="logContent"><span class="log-empty">Click Refresh to load logs</span></pre>
+  </div>
 </div>
 
 <!-- ===== Add/Edit Modal ===== -->
@@ -233,6 +322,62 @@ td.err { color:var(--red); }
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveWorker()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Batch Results Modal ===== -->
+<div class="modal-overlay" id="batchResultsOverlay">
+  <div class="modal modal-wide">
+    <h2 id="batchResultsTitle">Batch Results</h2>
+    <div class="batch-progress" id="batchProgress"></div>
+    <div class="batch-results" id="batchResultsBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="closeBatchResults()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Batch Config Modal ===== -->
+<div class="modal-overlay" id="batchConfigOverlay">
+  <div class="modal">
+    <h2>Batch Config Update</h2>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px" id="batchConfigInfo"></p>
+    <div class="form-group">
+      <label>Mining Pool URL (leave empty to skip)</label>
+      <input type="text" id="bcMiningPool" placeholder="https://pool.example.com">
+    </div>
+    <div class="form-group">
+      <label>Payment Address EVM (leave empty to skip)</label>
+      <input type="text" id="bcPaymentEvm" placeholder="0x...">
+    </div>
+    <div class="form-group">
+      <label>Payment Address Bittensor (leave empty to skip)</label>
+      <input type="text" id="bcPaymentBt" placeholder="5...">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeBatchConfig()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitBatchConfig()">Apply to Selected</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Batch Password Modal ===== -->
+<div class="modal-overlay" id="batchPasswordOverlay">
+  <div class="modal">
+    <h2>Batch Set Password</h2>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px" id="batchPasswordInfo"></p>
+    <div class="form-group">
+      <label>New Password (min 4 chars)</label>
+      <input type="password" id="bcPassword" placeholder="new password for all selected workers">
+    </div>
+    <div class="form-group">
+      <label>Confirm Password</label>
+      <input type="password" id="bcPasswordConfirm" placeholder="confirm password">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeBatchPassword()">Cancel</button>
+      <button class="btn btn-danger" onclick="submitBatchPassword()">Set Password</button>
     </div>
   </div>
 </div>
@@ -280,7 +425,8 @@ function renderOverview() {
     var dotClass = !L ? 'dot-gray' : (online ? 'dot-green' : 'dot-red');
     var statusText = !L ? 'never polled' : (online ? 'online' : 'offline');
 
-    html += '<div class="card" onclick="showDetail(\'' + w.id + '\')">';
+    html += '<div class="card" data-worker-id="' + w.id + '" onclick="showDetail(\'' + w.id + '\')">';
+    html += '<div class="checkbox-wrap"><input type="checkbox" onclick="toggleWorkerSelect(\'' + w.id + '\',event)"' + (selectedWorkerIds[w.id] ? ' checked' : '') + '></div>';
     html += '<div class="card-header"><span class="name"><span class="dot ' + dotClass + '"></span>' + esc(w.name) + '</span>';
     html += '<span style="font-size:0.75rem;color:var(--muted)">' + statusText + '</span></div>';
     html += '<div class="row"><span class="label">URL</span><span class="value"><a href="' + esc(w.url) + '/dashboard" target="_blank" onclick="event.stopPropagation()">' + esc(w.url) + '</a></span></div>';
@@ -309,6 +455,7 @@ function renderOverview() {
     html += '</div></div>';
   });
   grid.innerHTML = html;
+  updateSelectionUI();
 }
 
 function refreshOverview() {
@@ -324,6 +471,7 @@ function showDetail(id) {
   document.getElementById('overviewView').classList.add('hidden');
   document.getElementById('detailView').classList.add('active');
   loadDetail(id);
+  document.getElementById('logContent').innerHTML = '<span class="log-empty">Click Refresh to load logs</span>';
 }
 
 function showOverview() {
@@ -462,6 +610,30 @@ function renderPollHistory(items) {
   document.getElementById('pollHistoryBody').innerHTML = html;
 }
 
+// ===== Logs =====
+function loadLogs(id) {
+  if (!id) return;
+  var lines = document.getElementById('logLines').value;
+  var el = document.getElementById('logContent');
+  el.innerHTML = '<span class="log-empty">Loading logs...</span>';
+
+  fetch('/api/workers/' + id + '/logs?lines=' + lines)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.success && d.lines && d.lines.length > 0) {
+        el.textContent = d.lines.join('\n');
+        el.scrollTop = el.scrollHeight;
+      } else if (d.error) {
+        el.innerHTML = '<span class="log-empty">' + esc(d.error) + '</span>';
+      } else {
+        el.innerHTML = '<span class="log-empty">No logs available</span>';
+      }
+    })
+    .catch(function(e) {
+      el.innerHTML = '<span class="log-empty">Failed to fetch logs: ' + esc(e.message) + '</span>';
+    });
+}
+
 // ===== Modal =====
 function openAddModal() {
   document.getElementById('modalTitle').textContent = 'Add Worker';
@@ -528,6 +700,172 @@ function esc(s) {
   return d.innerHTML;
 }
 
+// ===== Batch Selection =====
+var selectedWorkerIds = {};
+
+function toggleWorkerSelect(id, event) {
+  event.stopPropagation();
+  if (selectedWorkerIds[id]) delete selectedWorkerIds[id];
+  else selectedWorkerIds[id] = true;
+  updateSelectionUI();
+}
+
+function selectAllWorkers() {
+  workers.forEach(function(w) { selectedWorkerIds[w.id] = true; });
+  updateSelectionUI();
+  renderOverview();
+}
+
+function selectOnlineWorkers() {
+  workers.forEach(function(w) {
+    if (w.latest && w.latest.online) selectedWorkerIds[w.id] = true;
+  });
+  updateSelectionUI();
+  renderOverview();
+}
+
+function deselectAllWorkers() {
+  selectedWorkerIds = {};
+  updateSelectionUI();
+  renderOverview();
+}
+
+function updateSelectionUI() {
+  var count = Object.keys(selectedWorkerIds).length;
+  var toolbar = document.getElementById('batchToolbar');
+  if (count > 0) toolbar.classList.add('active');
+  else toolbar.classList.remove('active');
+  document.getElementById('batchCount').textContent = count;
+
+  document.querySelectorAll('.card[data-worker-id]').forEach(function(card) {
+    var id = card.getAttribute('data-worker-id');
+    var cb = card.querySelector('input[type="checkbox"]');
+    if (selectedWorkerIds[id]) {
+      card.classList.add('selected');
+      if (cb) cb.checked = true;
+    } else {
+      card.classList.remove('selected');
+      if (cb) cb.checked = false;
+    }
+  });
+}
+
+function getSelectedIds() {
+  return Object.keys(selectedWorkerIds);
+}
+
+// ===== Batch Operations =====
+function batchCheckVersion() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  executeBatch('Check Version', '/api/batch/version', { worker_ids: ids });
+}
+
+function batchUpgrade() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  if (!confirm('Upgrade ' + ids.length + ' worker(s)? They will restart after upgrading.')) return;
+  executeBatch('Batch Upgrade', '/api/batch/upgrade', { worker_ids: ids });
+}
+
+function openBatchConfigModal() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  document.getElementById('batchConfigInfo').textContent = 'Applying to ' + ids.length + ' selected worker(s). Empty fields will be skipped.';
+  document.getElementById('bcMiningPool').value = '';
+  document.getElementById('bcPaymentEvm').value = '';
+  document.getElementById('bcPaymentBt').value = '';
+  document.getElementById('batchConfigOverlay').classList.add('active');
+}
+
+function closeBatchConfig() {
+  document.getElementById('batchConfigOverlay').classList.remove('active');
+}
+
+function submitBatchConfig() {
+  var ids = getSelectedIds();
+  var body = { worker_ids: ids };
+  var pool = document.getElementById('bcMiningPool').value.trim();
+  var evm = document.getElementById('bcPaymentEvm').value.trim();
+  var bt = document.getElementById('bcPaymentBt').value.trim();
+  if (!pool && !evm && !bt) { alert('At least one field is required'); return; }
+  if (pool) body.mining_pool_url = pool;
+  if (evm) body.payment_address_evm = evm;
+  if (bt) body.payment_address_bittensor = bt;
+  closeBatchConfig();
+  executeBatch('Batch Config', '/api/batch/config', body);
+}
+
+function openBatchPasswordModal() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  document.getElementById('batchPasswordInfo').textContent = 'Setting password on ' + ids.length + ' selected worker(s).';
+  document.getElementById('bcPassword').value = '';
+  document.getElementById('bcPasswordConfirm').value = '';
+  document.getElementById('batchPasswordOverlay').classList.add('active');
+}
+
+function closeBatchPassword() {
+  document.getElementById('batchPasswordOverlay').classList.remove('active');
+}
+
+function submitBatchPassword() {
+  var pw = document.getElementById('bcPassword').value;
+  var pw2 = document.getElementById('bcPasswordConfirm').value;
+  if (pw.length < 4) { alert('Password must be at least 4 characters'); return; }
+  if (pw !== pw2) { alert('Passwords do not match'); return; }
+  closeBatchPassword();
+  executeBatch('Batch Password', '/api/batch/password', { worker_ids: getSelectedIds(), password: pw });
+}
+
+function executeBatch(title, url, body) {
+  document.getElementById('batchResultsTitle').textContent = title;
+  document.getElementById('batchProgress').textContent = 'Executing...';
+  document.getElementById('batchResultsBody').innerHTML = '';
+  document.getElementById('batchResultsOverlay').classList.add('active');
+
+  fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.results) {
+        renderBatchResults(data.results);
+      } else if (data.error) {
+        document.getElementById('batchProgress').textContent = '';
+        document.getElementById('batchResultsBody').innerHTML =
+          '<div style="color:var(--red)">' + esc(data.error) + '</div>';
+      }
+    })
+    .catch(function(e) {
+      document.getElementById('batchProgress').textContent = '';
+      document.getElementById('batchResultsBody').innerHTML =
+        '<div style="color:var(--red)">Request failed: ' + esc(e.message) + '</div>';
+    });
+}
+
+function renderBatchResults(results) {
+  var ok = 0, fail = 0;
+  var html = '';
+  results.forEach(function(r) {
+    if (r.success) ok++; else fail++;
+    html += '<div class="batch-result-row">';
+    html += '<span class="worker-name">' + esc(r.worker_name) + '</span>';
+    html += '<span class="result-msg ' + (r.success ? 'result-ok' : 'result-err') + '">' + esc(r.message) + '</span>';
+    html += '</div>';
+  });
+  document.getElementById('batchProgress').innerHTML =
+    '<span style="color:var(--green)">' + ok + ' succeeded</span> / <span style="color:var(--red)">' + fail + ' failed</span>';
+  document.getElementById('batchResultsBody').innerHTML = html;
+}
+
+function closeBatchResults() {
+  document.getElementById('batchResultsOverlay').classList.remove('active');
+  refreshOverview();
+}
+
 // ===== Init =====
 refreshOverview();
 setInterval(function() {
@@ -535,13 +873,22 @@ setInterval(function() {
   else refreshOverview();
 }, 5000);
 
-// Handle ESC to close modal
+// Handle ESC to close modals
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') { closeModal(); closeBatchResults(); closeBatchConfig(); closeBatchPassword(); }
 });
-// Close modal on overlay click
+// Close modals on overlay click
 document.getElementById('modalOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeModal();
+});
+document.getElementById('batchResultsOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeBatchResults();
+});
+document.getElementById('batchConfigOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeBatchConfig();
+});
+document.getElementById('batchPasswordOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeBatchPassword();
 });
 </script>
 </body>

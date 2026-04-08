@@ -161,3 +161,14 @@ pub async fn get_worker(pool: &DbPool, id: &str) -> Result<Option<serde_json::Va
         })
     }))
 }
+
+/// Get multiple workers by IDs (including api_key).
+pub async fn get_workers_by_ids(pool: &DbPool, ids: &[String]) -> Result<Vec<serde_json::Value>, AppError> {
+    let mut results = Vec::new();
+    for id in ids {
+        if let Some(w) = get_worker(pool, id).await? {
+            results.push(w);
+        }
+    }
+    Ok(results)
+}
