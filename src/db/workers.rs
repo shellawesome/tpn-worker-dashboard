@@ -89,7 +89,8 @@ pub async fn list_workers_with_latest(pool: &DbPool) -> Result<Vec<serde_json::V
         "SELECT w.id, w.name, w.url, w.notes, w.api_key, w.poll_enabled, w.created_at, w.updated_at,
                 s.polled_at, s.poll_latency_ms, s.online, s.error_message,
                 s.version, s.mode, s.uptime_seconds, s.registration_success,
-                s.wg_active_peers, s.wg_max_peers, s.proxy_available, s.proxy_total
+                s.wg_active_peers, s.wg_max_peers, s.proxy_available, s.proxy_total,
+                json_extract(s.data, '$.mining_pool.url') as mining_pool_url
          FROM dashboard_workers w
          LEFT JOIN dashboard_snapshots s ON s.id = (
              SELECT id FROM dashboard_snapshots
@@ -104,6 +105,7 @@ pub async fn list_workers_with_latest(pool: &DbPool) -> Result<Vec<serde_json::V
     let mut result = Vec::new();
     for row in &rows {
         let polled_at: Option<String> = row.try_get("polled_at").ok();
+        let mining_pool_url: Option<String> = row.try_get::<String, _>("mining_pool_url").ok().filter(|s: &String| !s.is_empty());
         let latest = if polled_at.is_some() {
             serde_json::json!({
                 "online": row.get::<i32, _>("online") == 1,
@@ -132,6 +134,7 @@ pub async fn list_workers_with_latest(pool: &DbPool) -> Result<Vec<serde_json::V
             "poll_enabled": row.get::<i32, _>("poll_enabled") == 1,
             "created_at": row.get::<String, _>("created_at"),
             "updated_at": row.get::<String, _>("updated_at"),
+            "mining_pool_url": mining_pool_url,
             "latest": latest,
         }));
     }

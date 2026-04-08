@@ -451,6 +451,9 @@ function renderOverview() {
     html += '<div class="card-header"><span class="name"><span class="dot ' + dotClass + '"></span>' + esc(w.name) + '</span>';
     html += '<span style="font-size:0.75rem;color:var(--muted)">' + statusText + '</span></div>';
     html += '<div class="row"><span class="label">URL</span><span class="value"><a href="' + esc(w.url) + '/dashboard" target="_blank" onclick="event.stopPropagation()">' + esc(w.url) + '</a></span></div>';
+    if (w.mining_pool_url) {
+      html += '<div class="row"><span class="label">pool</span><span class="value" style="font-size:0.78rem">' + esc(w.mining_pool_url) + '</span></div>';
+    }
 
     if (L && online) {
       html += '<div class="row"><span class="label">version</span><span class="value">' + esc(L.version) + '</span></div>';
