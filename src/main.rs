@@ -157,6 +157,7 @@ async fn main() {
         .route("/api/batch/upgrade", post(api::batch::batch_upgrade))
         .route("/api/batch/config", post(api::batch::batch_config))
         .route("/api/batch/password", post(api::batch::batch_set_password))
+        .route("/api/batch/auth", post(api::batch::batch_set_auth))
         .route("/api/batch/restart", post(api::batch::batch_restart))
         .route("/api/batch/stop", post(api::batch::batch_stop))
         .route("/api/batch/start", post(api::batch::batch_start))

@@ -31,6 +31,12 @@ pub struct BatchPasswordRequest {
     pub password: String,
 }
 
+#[derive(Deserialize)]
+pub struct BatchAuthRequest {
+    pub worker_ids: Vec<String>,
+    pub api_key: String,
+}
+
 // ── Auth helper ──
 
 /// Login to a worker and get JWT token. Returns None if no password needed.
@@ -118,6 +124,29 @@ async fn authed_post(
 }
 
 // ── Batch handlers ──
+
+/// POST /api/batch/auth — Set api_key (worker password) for multiple workers in dashboard DB.
+pub async fn batch_set_auth(
+    State(state): State<AppState>,
+    Json(body): Json<BatchAuthRequest>,
+) -> Result<Json<Value>, AppError> {
+    let workers = db_workers::get_workers_by_ids(&state.db, &body.worker_ids).await?;
+    if workers.is_empty() {
+        return Err(AppError::BadRequest("No valid workers found".into()));
+    }
+
+    let mut results = Vec::new();
+    for w in &workers {
+        let id = w["id"].as_str().unwrap_or("");
+        let name = w["name"].as_str().unwrap_or("").to_string();
+        match db_workers::update_worker(&state.db, id, None, None, None, Some(&body.api_key), None).await {
+            Ok(_) => results.push(json!({ "worker_id": id, "worker_name": name, "success": true, "message": "Auth updated" })),
+            Err(e) => results.push(json!({ "worker_id": id, "worker_name": name, "success": false, "message": e.to_string() })),
+        }
+    }
+
+    Ok(Json(json!({ "results": results })))
+}
 
 /// POST /api/batch/version — Check version on multiple workers.
 pub async fn batch_check_version(

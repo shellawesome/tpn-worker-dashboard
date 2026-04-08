@@ -86,7 +86,7 @@ pub async fn delete_worker(pool: &DbPool, id: &str) -> Result<bool, AppError> {
 /// List all workers with their latest snapshot.
 pub async fn list_workers_with_latest(pool: &DbPool) -> Result<Vec<serde_json::Value>, AppError> {
     let rows = sqlx::query(
-        "SELECT w.id, w.name, w.url, w.notes, w.poll_enabled, w.created_at, w.updated_at,
+        "SELECT w.id, w.name, w.url, w.notes, w.api_key, w.poll_enabled, w.created_at, w.updated_at,
                 s.polled_at, s.poll_latency_ms, s.online, s.error_message,
                 s.version, s.mode, s.uptime_seconds, s.registration_success,
                 s.wg_active_peers, s.wg_max_peers, s.proxy_available, s.proxy_total
@@ -128,6 +128,7 @@ pub async fn list_workers_with_latest(pool: &DbPool) -> Result<Vec<serde_json::V
             "name": row.get::<String, _>("name"),
             "url": row.get::<String, _>("url"),
             "notes": row.get::<String, _>("notes"),
+            "api_key": row.get::<String, _>("api_key"),
             "poll_enabled": row.get::<i32, _>("poll_enabled") == 1,
             "created_at": row.get::<String, _>("created_at"),
             "updated_at": row.get::<String, _>("updated_at"),

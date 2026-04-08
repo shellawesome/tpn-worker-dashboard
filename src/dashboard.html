@@ -236,6 +236,7 @@ td.err { color:var(--red); }
     <button class="btn btn-sm btn-primary" onclick="batchUpgrade()">Batch Upgrade</button>
     <button class="btn btn-sm" onclick="openBatchConfigModal()">Batch Config</button>
     <button class="btn btn-sm" onclick="openBatchPasswordModal()">Batch Password</button>
+    <button class="btn btn-sm" onclick="openBatchAuthModal()">Batch Auth</button>
     <button class="btn btn-sm" onclick="batchRestart()">Restart</button>
     <button class="btn btn-sm" onclick="batchStop()">Stop</button>
     <button class="btn btn-sm" onclick="batchStart()">Start</button>
@@ -381,6 +382,23 @@ td.err { color:var(--red); }
     <div class="modal-actions">
       <button class="btn" onclick="closeBatchPassword()">Cancel</button>
       <button class="btn btn-danger" onclick="submitBatchPassword()">Set Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Batch Auth Modal ===== -->
+<div class="modal-overlay" id="batchAuthOverlay">
+  <div class="modal">
+    <h2>Batch Set Auth (Dashboard)</h2>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px" id="batchAuthInfo"></p>
+    <p style="font-size:0.8rem;color:var(--yellow);margin-bottom:14px">⚠️ This sets the worker password stored in the dashboard DB (for polling/auth). It does NOT change the worker's actual password.</p>
+    <div class="form-group">
+      <label>Worker Password (API Key)</label>
+      <input type="password" id="bcAuthKey" placeholder="worker password">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeBatchAuth()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitBatchAuth()">Update Auth</button>
     </div>
   </div>
 </div>
@@ -841,6 +859,24 @@ function submitBatchPassword() {
   executeBatch('Batch Password', '/api/batch/password', { worker_ids: getSelectedIds(), password: pw });
 }
 
+function openBatchAuthModal() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  document.getElementById('batchAuthInfo').textContent = 'Setting auth for ' + ids.length + ' selected worker(s) in dashboard DB.';
+  document.getElementById('bcAuthKey').value = '';
+  document.getElementById('batchAuthOverlay').classList.add('active');
+}
+
+function closeBatchAuth() {
+  document.getElementById('batchAuthOverlay').classList.remove('active');
+}
+
+function submitBatchAuth() {
+  var key = document.getElementById('bcAuthKey').value;
+  closeBatchAuth();
+  executeBatch('Batch Auth', '/api/batch/auth', { worker_ids: getSelectedIds(), api_key: key });
+}
+
 function executeBatch(title, url, body) {
   document.getElementById('batchResultsTitle').textContent = title;
   document.getElementById('batchProgress').textContent = 'Executing...';
@@ -898,7 +934,7 @@ setInterval(function() {
 
 // Handle ESC to close modals
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { closeModal(); closeBatchResults(); closeBatchConfig(); closeBatchPassword(); }
+  if (e.key === 'Escape') { closeModal(); closeBatchResults(); closeBatchConfig(); closeBatchPassword(); closeBatchAuth(); }
 });
 // Close modals on overlay click
 document.getElementById('modalOverlay').addEventListener('click', function(e) {
@@ -912,6 +948,9 @@ document.getElementById('batchConfigOverlay').addEventListener('click', function
 });
 document.getElementById('batchPasswordOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeBatchPassword();
+});
+document.getElementById('batchAuthOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeBatchAuth();
 });
 </script>
 </body>

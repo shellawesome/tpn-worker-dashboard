@@ -26,6 +26,7 @@ pub async fn poll_all_workers(pool: &DbPool, client: &reqwest::Client) {
 
         let worker_id = w["id"].as_str().unwrap_or("").to_string();
         let worker_url = w["url"].as_str().unwrap_or("").to_string();
+        let api_key = w["api_key"].as_str().unwrap_or("").to_string();
         if worker_url.is_empty() {
             continue;
         }
@@ -36,7 +37,7 @@ pub async fn poll_all_workers(pool: &DbPool, client: &reqwest::Client) {
 
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await;
-            poll_single_worker(&pool, &client, &worker_id, &worker_url).await;
+            poll_single_worker(&pool, &client, &worker_id, &worker_url, &api_key).await;
         }));
     }
 
@@ -45,12 +46,73 @@ pub async fn poll_all_workers(pool: &DbPool, client: &reqwest::Client) {
     }
 }
 
-async fn poll_single_worker(pool: &DbPool, client: &reqwest::Client, worker_id: &str, base_url: &str) {
-    let url = format!("{}/api/dashboard", base_url.trim_end_matches('/'));
+/// Login to worker and get JWT token. Returns None if no auth needed.
+async fn get_auth_token(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+) -> Result<Option<String>, String> {
+    if api_key.is_empty() {
+        return Ok(None);
+    }
+
+    let url = format!("{}/api/login", base_url.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .timeout(Duration::from_secs(10))
+        .json(&serde_json::json!({ "password": api_key }))
+        .send()
+        .await
+        .map_err(|e| format!("Login failed: {}", e))?;
+
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Login parse error: {}", e))?;
+
+    if body["success"].as_bool() == Some(true) {
+        if let Some(token) = body["data"]["token"].as_str() {
+            return Ok(Some(token.to_string()));
+        }
+    }
+
+    Err(body["message"]
+        .as_str()
+        .unwrap_or("Login failed")
+        .to_string())
+}
+
+async fn poll_single_worker(
+    pool: &DbPool,
+    client: &reqwest::Client,
+    worker_id: &str,
+    base_url: &str,
+    api_key: &str,
+) {
+    let base = base_url.trim_end_matches('/');
     let now = chrono::Utc::now().to_rfc3339();
     let start = Instant::now();
 
-    match client.get(&url).send().await {
+    // Authenticate if needed
+    let token = match get_auth_token(client, base, api_key).await {
+        Ok(t) => t,
+        Err(e) => {
+            let latency = start.elapsed().as_millis() as i64;
+            let _ = snapshots::insert_snapshot(
+                pool, worker_id, &now, latency, false,
+                &format!("Auth error: {}", e), "", "", "", 0, false, 0, 0, 0, 0,
+            ).await;
+            return;
+        }
+    };
+
+    let url = format!("{}/api/dashboard", base);
+    let mut req = client.get(&url);
+    if let Some(ref t) = token {
+        req = req.header("Authorization", format!("Bearer {}", t));
+    }
+
+    match req.send().await {
         Ok(resp) => {
             let latency = start.elapsed().as_millis() as i64;
             let status = resp.status();
