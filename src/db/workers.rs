@@ -90,7 +90,7 @@ pub async fn list_workers_with_latest(pool: &DbPool) -> Result<Vec<serde_json::V
                 s.polled_at, s.poll_latency_ms, s.online, s.error_message,
                 s.version, s.mode, s.uptime_seconds, s.registration_success,
                 s.wg_active_peers, s.wg_max_peers, s.proxy_available, s.proxy_total,
-                json_extract(s.data, '$.mining_pool.url') as mining_pool_url
+                CASE WHEN s.data != '' THEN json_extract(s.data, '$.mining_pool.url') ELSE NULL END as mining_pool_url
          FROM dashboard_workers w
          LEFT JOIN dashboard_snapshots s ON s.id = (
              SELECT id FROM dashboard_snapshots
