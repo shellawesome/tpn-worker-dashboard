@@ -90,6 +90,22 @@ body {
   border-top:1px solid var(--border);
 }
 
+/* Port health badges */
+.port-health { display:flex; gap:6px; flex-wrap:wrap; }
+.port-badge {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:2px 6px; border-radius:4px; font-size:0.72rem;
+  border:1px solid var(--border); background:var(--bg);
+  font-family:"SF Mono","Fira Code",Consolas,monospace;
+}
+.port-badge .pdot { width:6px; height:6px; border-radius:50%; display:inline-block; }
+.port-badge.ok { border-color:rgba(34,197,94,0.4); }
+.port-badge.ok .pdot { background:var(--green); }
+.port-badge.fail { border-color:rgba(239,68,68,0.4); }
+.port-badge.fail .pdot { background:var(--red); }
+.port-badge.na { color:var(--muted); }
+.port-badge.na .pdot { background:var(--muted); }
+
 /* Batch selection */
 .card { position:relative; }
 .card.selected { border-color:var(--accent); background:rgba(79,143,247,0.08); }
@@ -222,6 +238,8 @@ td.err { color:var(--red); }
     <h1>TPN Worker Dashboard</h1>
     <div class="header-right">
       <span class="summary" id="summary">loading...</span>
+      <span class="summary" id="versionInfo" style="font-size:0.75rem"></span>
+      <button class="btn" id="updateBtn" onclick="checkOrUpgradeDashboard()">Check Update</button>
       <button class="btn btn-primary" onclick="openAddModal()">+ Add Worker</button>
     </div>
   </div>
@@ -231,6 +249,8 @@ td.err { color:var(--red); }
     <span class="batch-info"><strong id="batchCount">0</strong> workers selected</span>
     <button class="btn btn-sm" onclick="selectAllWorkers()">Select All</button>
     <button class="btn btn-sm" onclick="selectOnlineWorkers()">Select Online</button>
+    <button class="btn btn-sm" onclick="selectRegisteredWorkers()">Select Registered</button>
+    <button class="btn btn-sm" onclick="selectUnregisteredWorkers()">Select Unregistered</button>
     <button class="btn btn-sm" onclick="deselectAllWorkers()">Deselect All</button>
     <button class="btn btn-sm" onclick="batchCheckVersion()">Check Version</button>
     <button class="btn btn-sm btn-primary" onclick="batchUpgrade()">Batch Upgrade</button>
@@ -452,6 +472,28 @@ function fmtTime(t) {
 
 function truncate(s, n) { return (!s) ? '-' : s.length > n ? s.substring(0,n)+'...' : s; }
 
+function portBadge(label, port, ok) {
+  if (!port) {
+    return '<span class="port-badge na" title="' + label + ' port not set"><span class="pdot"></span>' + label + '</span>';
+  }
+  var cls = ok ? 'ok' : 'fail';
+  var title = label + ' ' + port + ' — ' + (ok ? 'reachable' : 'unreachable');
+  return '<span class="port-badge ' + cls + '" title="' + title + '"><span class="pdot"></span>' + label + ':' + port + '</span>';
+}
+
+function renderPortHealth(ph) {
+  if (!ph) {
+    return '<span style="color:var(--muted);font-size:0.75rem">not checked</span>';
+  }
+  var html = '<div class="port-health">';
+  html += portBadge('pub', ph.public_port, ph.public_ok);
+  html += portBadge('s5', ph.socks5_port, ph.socks5_ok);
+  html += portBadge('http', ph.http_port, ph.http_ok);
+  html += portBadge('wg', ph.wg_port, ph.wg_ok);
+  html += '</div>';
+  return html;
+}
+
 // ===== Overview =====
 function renderOverview() {
   var onCount = 0, offCount = 0;
@@ -500,6 +542,9 @@ function renderOverview() {
         html += '<div class="row"><span class="label">error</span><span class="value err">' + truncate(esc(L.error_message), 50) + '</span></div>';
       }
     }
+
+    // Port health row (full width)
+    html += '<div style="margin-top:6px"><div style="font-size:0.75rem;color:var(--muted);margin-bottom:4px">port health</div>' + renderPortHealth(w.port_health) + '</div>';
 
     html += '<div class="card-actions">';
     html += '<button class="btn btn-sm" onclick="event.stopPropagation();openEditModal(\'' + w.id + '\')">Edit</button>';
@@ -819,6 +864,22 @@ function selectOnlineWorkers() {
   renderOverview();
 }
 
+function selectRegisteredWorkers() {
+  workers.forEach(function(w) {
+    if (w.latest && w.latest.online && w.latest.registration_success) selectedWorkerIds[w.id] = true;
+  });
+  updateSelectionUI();
+  renderOverview();
+}
+
+function selectUnregisteredWorkers() {
+  workers.forEach(function(w) {
+    if (w.latest && w.latest.online && !w.latest.registration_success) selectedWorkerIds[w.id] = true;
+  });
+  updateSelectionUI();
+  renderOverview();
+}
+
 function deselectAllWorkers() {
   selectedWorkerIds = {};
   updateSelectionUI();
@@ -999,7 +1060,63 @@ function closeBatchResults() {
   refreshOverview();
 }
 
+// ===== Dashboard Self-Upgrade =====
+var dashboardVersionInfo = null;
+
+function refreshVersionInfo() {
+  fetch('/api/version')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d || !d.data) return;
+      dashboardVersionInfo = d.data;
+      var el = document.getElementById('versionInfo');
+      var btn = document.getElementById('updateBtn');
+      var cur = d.data.current || '';
+      var latest = d.data.latest || '';
+      if (d.data.has_update) {
+        el.innerHTML = cur + ' → <span style="color:var(--yellow)">' + esc(latest) + '</span>';
+        btn.textContent = 'Update Now';
+        btn.classList.add('btn-primary');
+      } else {
+        el.textContent = cur + (latest ? ' (latest)' : '');
+        btn.textContent = 'Check Update';
+        btn.classList.remove('btn-primary');
+      }
+    })
+    .catch(function() {});
+}
+
+function checkOrUpgradeDashboard() {
+  if (dashboardVersionInfo && dashboardVersionInfo.has_update) {
+    if (!confirm('Upgrade dashboard to ' + dashboardVersionInfo.latest + '? The service will restart.')) return;
+    var btn = document.getElementById('updateBtn');
+    btn.disabled = true;
+    btn.textContent = 'Updating...';
+    fetch('/api/upgrade', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.success) {
+          alert(d.message || 'Update started. Reloading in 5s...');
+          setTimeout(function() { location.reload(); }, 5000);
+        } else {
+          alert('Update failed: ' + (d.message || 'unknown'));
+          btn.disabled = false;
+          btn.textContent = 'Update Now';
+        }
+      })
+      .catch(function(e) {
+        // Connection may drop during restart — treat as success.
+        alert('Connection closed (likely restarting). Reloading in 5s...');
+        setTimeout(function() { location.reload(); }, 5000);
+      });
+  } else {
+    refreshVersionInfo();
+  }
+}
+
 // ===== Init =====
+refreshVersionInfo();
+setInterval(refreshVersionInfo, 60000);
 refreshOverview();
 setInterval(function() {
   if (currentWorkerId) loadDetail(currentWorkerId);

@@ -58,5 +58,24 @@ pub async fn init_database(pool: &DbPool) -> Result<(), sqlx::Error> {
     .await?;
     info!("dashboard_settings table initialized");
 
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS dashboard_port_health (
+            worker_id TEXT PRIMARY KEY REFERENCES dashboard_workers(id) ON DELETE CASCADE,
+            checked_at TEXT NOT NULL,
+            host TEXT NOT NULL DEFAULT '',
+            public_port INTEGER NOT NULL DEFAULT 0,
+            public_ok INTEGER NOT NULL DEFAULT 0,
+            socks5_port INTEGER NOT NULL DEFAULT 0,
+            socks5_ok INTEGER NOT NULL DEFAULT 0,
+            http_port INTEGER NOT NULL DEFAULT 0,
+            http_ok INTEGER NOT NULL DEFAULT 0,
+            wg_port INTEGER NOT NULL DEFAULT 0,
+            wg_ok INTEGER NOT NULL DEFAULT 0
+        )",
+    )
+    .execute(pool)
+    .await?;
+    info!("dashboard_port_health table initialized");
+
     Ok(())
 }

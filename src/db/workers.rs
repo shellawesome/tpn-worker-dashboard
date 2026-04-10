@@ -102,6 +102,8 @@ pub async fn list_workers_with_latest(pool: &DbPool) -> Result<Vec<serde_json::V
     .fetch_all(pool)
     .await?;
 
+    let port_health_map = super::port_health::load_all(pool).await.unwrap_or_default();
+
     let mut result = Vec::new();
     for row in &rows {
         let polled_at: Option<String> = row.try_get("polled_at").ok();
@@ -125,8 +127,11 @@ pub async fn list_workers_with_latest(pool: &DbPool) -> Result<Vec<serde_json::V
             serde_json::Value::Null
         };
 
+        let id: String = row.get("id");
+        let port_health = port_health_map.get(&id).cloned().unwrap_or(serde_json::Value::Null);
+
         result.push(serde_json::json!({
-            "id": row.get::<String, _>("id"),
+            "id": id,
             "name": row.get::<String, _>("name"),
             "url": row.get::<String, _>("url"),
             "notes": row.get::<String, _>("notes"),
@@ -136,6 +141,7 @@ pub async fn list_workers_with_latest(pool: &DbPool) -> Result<Vec<serde_json::V
             "updated_at": row.get::<String, _>("updated_at"),
             "mining_pool_url": mining_pool_url,
             "latest": latest,
+            "port_health": port_health,
         }));
     }
 

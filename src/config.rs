@@ -17,4 +17,7 @@ pub struct DashboardConfig {
 
     #[clap(env = "LOG_LEVEL", default_value = "info")]
     pub log_level: String,
+
+    #[clap(env = "DASHBOARD_GITHUB_REPO", default_value = "shellawesome/tpn-worker-dashboard")]
+    pub github_repo: String,
 }

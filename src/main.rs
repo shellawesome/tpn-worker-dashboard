@@ -165,12 +165,21 @@ async fn main() {
         .route("/api/batch/restart", post(api::batch::batch_restart))
         .route("/api/batch/stop", post(api::batch::batch_stop))
         .route("/api/batch/start", post(api::batch::batch_start))
+        .route("/api/version", get(api::upgrade::get_version))
+        .route("/api/upgrade", post(api::upgrade::do_upgrade))
         .with_state(state);
 
     // 8. Spawn background poller
     let poll_interval = config.poll_interval_seconds;
+    let poller_pool = pool.clone();
     tokio::spawn(async move {
-        poller::run_poller(pool, http_client, poll_interval).await;
+        poller::run_poller(poller_pool, http_client, poll_interval).await;
+    });
+
+    // 8b. Spawn port health TCP checker (every 10 minutes)
+    let ph_pool = pool.clone();
+    tokio::spawn(async move {
+        poller::port_health::run_port_health_loop(ph_pool, 600).await;
     });
 
     // 9. Start HTTP server

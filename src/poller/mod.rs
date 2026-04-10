@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
+pub mod port_health;
+
 /// Poll all enabled workers and store snapshots.
 pub async fn poll_all_workers(pool: &DbPool, client: &reqwest::Client) {
     let workers = match workers::list_workers_with_latest(pool).await {
